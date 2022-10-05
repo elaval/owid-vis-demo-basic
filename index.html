@@ -1,0 +1,106 @@
+<html>
+
+<head>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@elaval/owid-vis-poc@0.2.2"></script>
+    <script>
+
+        /** Trigger a function when teh document is ready loading scripts */
+        function docReady(fn) {
+            // see if DOM is already available
+            if (document.readyState === "complete" || document.readyState === "interactive") {
+                // call on next available tick
+                setTimeout(fn, 1);
+            } else {
+                document.addEventListener("DOMContentLoaded", fn);
+            }
+        }
+
+        /***
+         * Retrives data & metaData for a given variable from OWDI APIs and returns an array that includes records with years, entitieNames and values
+         ***/
+        function getOWIDData(variableId) {
+            return new Promise((resolve, reject) => {
+                let dictEntities = {};
+                let data = [];
+                let variableMetadata = {};
+
+                // Get metadata for the given variable from OWID backend 
+                d3.json(
+                    `https://ourworldindata.org/grapher/data/variables/metadata/${variableId}.json`
+                )
+                    .then(metadata => {
+                        if (metadata) {
+
+                            variableMetadata = metadata;
+
+                            // If we successfully retreived madata, we build a dictionary with entity info
+                            metadata.dimensions.entities.values.forEach(
+                                (d) => (dictEntities[d.id] = { name: d.name, code: d.code })
+                            );
+
+
+                            // Get data for the given variable (96429) from OWID backend
+                            return d3.json(`https://ourworldindata.org/grapher/data/variables/data/${variableId}.json`)
+
+                        }
+                    })
+                    .then(dataRaw => {
+
+                        // Transform the raw data (which contains 3 arrays for years, values && entity ids) into an array
+                        // with records that include year, value, entityId, entityName and entityCode
+                        const data = dataRaw.years.map((year, i) => ({
+                            year: year,
+                            entity: dataRaw.entities[i],
+                            entityName: dictEntities[dataRaw.entities[i]].name,
+                            entityCode: dictEntities[dataRaw.entities[i]].code,
+                            value: dataRaw.values[i]
+                        }))
+
+                        resolve({ data: data, metadata: variableMetadata })
+                    })
+                    .catch(err => console.error(err));
+            })
+        }
+    </script>
+</head>
+
+<body>
+    <h1 id="title"></h1>
+    <div id="owidChart"></div>
+    <p id="source"></p>
+
+    <script>
+        docReady(function () {
+            const owidVis = window["owidVis"]
+            const variableId = 96429; // Life expectancy (OECD)
+            getOWIDData(variableId)
+                .then(result => {
+                    const data = result && result.data;
+                    const metadata = result && result.metadata;
+
+                    // Add title based on metadata | datasetName
+                    const title = metadata.datasetName;
+                    document.getElementById("title").textContent = title;
+
+                    // Filter data to a selection of 4 countries
+                    const selectedData = data.filter(d => ["Chile", "United Kingdom", "Japan", "South Africa"].includes(d.entityName))
+
+                    const trendChart = owidVis.trendChart(selectedData)
+                        .y({ grid: true })
+                        .width(1000)
+                        .unit("years")
+
+                    const chartTrendEL = trendChart.node();
+                    document.getElementById("owidChart").appendChild(chartTrendEL);
+
+                    // Add source based on metadata | source.name
+                    const source = metadata.source && metadata.source.dataPublishedBy;
+                    document.getElementById("source").textContent = `Source: ${source}`;
+
+                });
+        })
+    </script>
+</body>
+
+</html>
